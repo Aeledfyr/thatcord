@@ -32,7 +32,7 @@ impl DefaultEventHandler {
         self.events.insert(event, handler);
     }
 
-    async fn pre_ready(&mut self, data: &serde_json::Value) -> InternalResult<()> {
+    fn pre_ready(&mut self, data: &serde_json::Value) -> InternalResult<()> {
         let c = self
             .client
             .as_mut()
@@ -51,7 +51,7 @@ impl DefaultEventHandler {
         Ok(())
     }
 
-    async fn pre_guild_create(&mut self, data: &serde_json::Value) -> InternalResult<()> {
+    fn pre_guild_create(&mut self, data: &serde_json::Value) -> InternalResult<()> {
         let c = self
             .client
             .as_mut()
@@ -75,8 +75,8 @@ impl GatewayEventHandler for DefaultEventHandler {
     async fn handle(&mut self, event: String, data: serde_json::Value) -> InternalResult<()> {
         // Special case events
         match event.as_str() {
-            "READY" => self.pre_ready(&data).await?,
-            "GUILD_CREATE" => self.pre_guild_create(&data).await?,
+            "READY" => self.pre_ready(&data)?,
+            "GUILD_CREATE" => self.pre_guild_create(&data)?,
             _ => {}
         }
 
