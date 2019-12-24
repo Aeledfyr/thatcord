@@ -8,7 +8,7 @@ struct ExampleHandler {
 // `this` can be anything but `self`  --v
 impl_event!(ExampleHandler, ReadyEvent(this, client: (events::Client<'_>)) {
     let client = client;
-    let user = client.get_user();
+    let user = client.get_current_user();
 
     println!("{}", this.welcome_text);
     println!("user: {}#{}", user.username, user.discriminator);

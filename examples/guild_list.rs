@@ -5,7 +5,7 @@ struct ExampleReadyHandler {
 }
 
 impl_event!(ExampleReadyHandler, ReadyEvent(this, client: (events::Client<'_>)) {
-    let user = client.get_user();
+    let user = client.get_current_user();
 
     println!("{}", this.welcome_text);
     println!("user: {}#{}", user.username, user.discriminator);
