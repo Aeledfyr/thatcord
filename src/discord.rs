@@ -8,8 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-const TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS: &str = "wss://gateway.discord.gg";
-const API_PATH: &str = "https://discordapp.com/api/v6";
+pub(crate) const API_PATH: &str = "https://discordapp.com/api/v6";
 
 /// The User-Agent of the discord bot that is used when interacting
 /// with the discord apis.
@@ -174,6 +173,12 @@ impl Discord {
     /// **Warning:** This method **will not return** until the connection closes.
     pub async fn connect(this: Rc<RefCell<Self>>, token: &str) -> Result<()> {
         let mut iself = this.borrow_mut();
+        let gateway =
+            json::gateway::get_bot_gateway(token)
+                .await
+                .map_err(|e| Errors::ApiHttpError {
+                    source: DebugWrapper(e),
+                })?;
 
         // Since this method is the last one that should be called in this struct,
         // we can safely move the event handler off of us, and into the gateway.
@@ -181,7 +186,7 @@ impl Discord {
         // https://stackoverflow.com/questions/31307680/how-to-move-one-field-out-of-a-struct-that-implements-drop-trait
         let take_ownership_of_events = std::mem::replace(&mut iself.events, None);
         let mut gateway = Gateway::new(
-            TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS,
+            &gateway.url,
             token,
             take_ownership_of_events.expect("Events not initialized? It should be..."),
         )
