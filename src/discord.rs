@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 const TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS: &str = "wss://gateway.discord.gg";
+const API_PATH: &str = "https://discordapp.com/api/v6";
 
 /// The User-Agent of the discord bot that is used when interacting
 /// with the discord apis.
@@ -20,12 +21,16 @@ pub(crate) const USER_AGENT: &str = concat!(
     ")"
 );
 
+/// A structure that handles distributing events to different event
+/// handlers.
 struct DefaultEventHandler {
     events: HashMap<String, Box<dyn EventHandler>>,
     client: Option<Weak<RefCell<Discord>>>,
 }
 
 impl DefaultEventHandler {
+    /// Creates a new instance of the DefaultEventHandler, with no registered
+    /// handlers
     pub(crate) fn new() -> Self {
         DefaultEventHandler {
             client: None,
@@ -33,14 +38,21 @@ impl DefaultEventHandler {
         }
     }
 
+    /// Sets the discord client of the DefaultEventHandler
     pub(crate) fn set_client(&mut self, client: Weak<RefCell<Discord>>) {
         self.client = Some(client);
     }
 
+    /// Registers an event handler for the given event
+    ///
+    /// The handler will run whenever that event is received, and will
+    /// replace any previous handler for that event.
     pub(crate) fn register_event(&mut self, event: String, handler: Box<dyn EventHandler>) {
         self.events.insert(event, handler);
     }
 
+    /// A handler function that runs before any of the registered event handlers
+    /// run when a "READY" event is recieved.
     async fn pre_ready(&mut self, data: &serde_json::Value) -> InternalResult<()> {
         let c = self
             .client
@@ -60,6 +72,8 @@ impl DefaultEventHandler {
         Ok(())
     }
 
+    /// A handler function that runs before any of the registered event handlers
+    /// run when a "GUILD_CREATE" event is recieved.
     async fn pre_guild_create(&mut self, data: &serde_json::Value) -> InternalResult<()> {
         let c = self
             .client
@@ -107,6 +121,8 @@ impl GatewayEventHandler for DefaultEventHandler {
     }
 }
 
+/// An instance of a discord client.
+///
 /// This is the "main" struct you'll need to connect to Discord.
 pub struct Discord {
     events: Option<DefaultEventHandler>,
@@ -116,6 +132,7 @@ pub struct Discord {
 }
 
 impl Discord {
+    /// Creates a new instance of the Discord client
     pub fn new() -> Rc<RefCell<Self>> {
         let slf = Rc::new(RefCell::new(Self {
             events: Some(DefaultEventHandler::new()),
@@ -124,13 +141,13 @@ impl Discord {
             guilds: RefCell::new(Vec::default()),
         }));
 
-        // I tried something. It didn't work. I forgot how I did it before.
-        let cslf = slf.clone();
-        let mut mslf = cslf.borrow_mut();
-        mslf.events
-            .as_mut()
-            .expect("Event that I _just_ set is not set? What?")
-            .set_client(Rc::downgrade(&slf));
+        {
+            let mut mslf = slf.borrow_mut();
+            mslf.events
+                .as_mut()
+                .expect("Event that I _just_ set is not set? What?")
+                .set_client(Rc::downgrade(&slf));
+        }
 
         slf
     }
@@ -145,7 +162,7 @@ impl Discord {
 
     /// Get information about the current user/bot.
     /// **Warning:** You **can not** use this until you receive a `thatcord::events::ReadyEvent`.
-    pub fn get_user(&self) -> json::User {
+    pub fn get_current_user(&self) -> json::User {
         self.user
             .borrow()
             .as_ref()

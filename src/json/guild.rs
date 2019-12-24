@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// See tbe following official documentation for item descriptions.
+/// See the following official documentation for item descriptions.
 /// https://discordapp.com/developers/docs/resources/guild#guild-object
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Guild {
