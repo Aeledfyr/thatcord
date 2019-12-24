@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct GuildId(super::Id);
+
 /// See the following official documentation for item descriptions.
 /// https://discordapp.com/developers/docs/resources/guild#guild-object
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[non_exhaustive]
 pub struct Guild {
-    pub id: String,
+    pub id: GuildId,
     pub unavailable: bool,
 
     // The rest will only be created whenever Discord sends us a GUILD_CREATE event
@@ -23,7 +27,7 @@ pub struct Guild {
 
     pub member_count: Option<u64>,
 
-    pub owner_id: Option<String>,
+    pub owner_id: Option<super::UserId>,
     pub application_id: Option<String>,
 
     pub afk_channel_id: Option<String>,
