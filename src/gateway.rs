@@ -23,8 +23,11 @@ enum DiscordState {
     Ready,
 }
 
+/// The opcode for a gateway event
+///
+/// https://discordapp.com/developers/docs/topics/opcodes-and-status-codes#gateway-opcodes
 #[derive(Copy, Clone)]
-enum DiscordOpcodes {
+enum GatewayOpcodes {
     HEARTBEAT = 1,
     IDENTIFY = 2,
 }
@@ -56,7 +59,7 @@ async fn heartbeat(
         log::trace!("Sending heartbeat");
         if let Err(e) = send(
             client.lock().await.deref_mut(),
-            DiscordOpcodes::HEARTBEAT,
+            GatewayOpcodes::HEARTBEAT,
             serde_json::to_value(seq_channel.recv().await)
                 .expect("heartbeat sequence cannot be transformed into a JSON value"),
         )
@@ -100,7 +103,7 @@ where
     async fn op1_heartbeat(&mut self, _payload: gateway::Payload) -> Result<()> {
         let mut ch = self.heartbeat_seq_channel_recv.clone(); // Is this inefficient?
         self.send(
-            DiscordOpcodes::HEARTBEAT,
+            GatewayOpcodes::HEARTBEAT,
             serde_json::to_value(ch.recv().await).context(JsonConversionError)?,
         )
         .await
@@ -117,13 +120,13 @@ where
             });
 
             self.send(
-                DiscordOpcodes::IDENTIFY,
+                GatewayOpcodes::IDENTIFY,
                 json!({
                     "token": self.token,
                     "properties": {
                         "$os": std::env::consts::OS,
-                        "$browser": "admi#4273's wip discord rust client",
-                        "$device": "admi#4273's wip discord rust client"
+                        "$browser": crate::LIBRARY_IDENTITY,
+                        "$device": crate::LIBRARY_IDENTITY
                     }
                 }),
             )
@@ -149,7 +152,7 @@ where
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
             .context(GatewayClientBuildError)?;
-        builder.add_header("User-Agent".to_owned(), "admi#4273".to_owned());
+        builder.add_header("User-Agent".to_owned(), crate::discord::USER_AGENT.to_owned());
 
         if let Ok(client) = builder.async_connect().await {
             let (tx, rx) = watch::channel::<Option<u64>>(None);
@@ -212,14 +215,14 @@ where
         }
     }
 
-    async fn send(&mut self, opcode: DiscordOpcodes, data: serde_json::Value) -> Result<()> {
+    async fn send(&mut self, opcode: GatewayOpcodes, data: serde_json::Value) -> Result<()> {
         send(self.client.lock().await.deref_mut(), opcode, data).await
     }
 }
 
 async fn send(
     client: &mut WSClient,
-    opcode: DiscordOpcodes,
+    opcode: GatewayOpcodes,
     data: serde_json::Value,
 ) -> Result<()> {
     send_payload(
