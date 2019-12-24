@@ -17,6 +17,7 @@ snafu = "0.6.0"
 url = "2.1.0"
 async-trait = "0.1.21"
 paste = "0.1.6"
+surf = "1.0"
 
 [dev-dependencies]
 env_logger = "0.7.1"
