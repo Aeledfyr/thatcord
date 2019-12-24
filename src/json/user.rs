@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 /// A Discord User
 /// https://discordapp.com/developers/docs/resources/user#user-object
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[non_exhaustive]
 pub struct User {
     pub id: String,
     pub username: String,

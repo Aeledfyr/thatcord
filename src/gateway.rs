@@ -23,14 +23,7 @@ enum DiscordState {
     Ready,
 }
 
-/// The opcode for a gateway event
-///
-/// https://discordapp.com/developers/docs/topics/opcodes-and-status-codes#gateway-opcodes
-#[derive(Copy, Clone)]
-enum GatewayOpcodes {
-    HEARTBEAT = 1,
-    IDENTIFY = 2,
-}
+use gateway::GatewayOpcode;
 
 pub(crate) struct Gateway<F>
 where
@@ -59,7 +52,7 @@ async fn heartbeat(
         log::trace!("Sending heartbeat");
         if let Err(e) = send(
             client.lock().await.deref_mut(),
-            GatewayOpcodes::HEARTBEAT,
+            GatewayOpcode::Heartbeat,
             serde_json::to_value(seq_channel.recv().await)
                 .expect("heartbeat sequence cannot be transformed into a JSON value"),
         )
@@ -101,26 +94,34 @@ where
     }
 
     async fn op1_heartbeat(&mut self, _payload: gateway::Payload) -> Result<()> {
-        let mut ch = self.heartbeat_seq_channel_recv.clone(); // Is this inefficient?
-        self.send(
-            GatewayOpcodes::HEARTBEAT,
+        let ch = &mut self.heartbeat_seq_channel_recv;
+        send(
+            &mut *self.client.lock().await,
+            GatewayOpcode::Heartbeat,
             serde_json::to_value(ch.recv().await).context(JsonConversionError)?,
         )
         .await
     }
 
-    async fn op10_hello(&mut self, payload: gateway::Payload) -> Result<()> {
-        let client = self.client.clone();
-        let mut seq_channel = self.heartbeat_seq_channel_recv.clone();
+    async fn op7_reconnect(&mut self, _payload: gateway::Payload) -> Result<()> {
+        unimplemented!("Discord Gateway Reconnect")
+    }
+    async fn op9_invalid_session(&mut self, _payload: gateway::Payload) -> Result<()> {
+        unimplemented!("Discord Gateway Invalid Session")
+    }
 
+    async fn op10_hello(&mut self, payload: gateway::Payload) -> Result<()> {
         if let Some(heartbeat_interval) = payload.d["heartbeat_interval"].as_u64() {
+            let client = self.client.clone();
+            let mut seq_channel = self.heartbeat_seq_channel_recv.clone();
+
             log::trace!("heartbeat interval: {} ms", heartbeat_interval);
             tokio::spawn(async move {
                 heartbeat(client, heartbeat_interval, &mut seq_channel).await;
             });
 
             self.send(
-                GatewayOpcodes::IDENTIFY,
+                GatewayOpcode::Identify,
                 json!({
                     "token": self.token,
                     "properties": {
@@ -173,10 +174,8 @@ where
     }
 
     pub(crate) async fn handle(&mut self) -> Result<()> {
-        let client = self.client.clone();
-
         loop {
-            let mut c_lock = client.lock().await;
+            let mut c_lock = self.client.lock().await;
             let payload = c_lock.deref_mut().next().await;
 
             // Drop the Mutex lock so we can use `client` elsewhere.
@@ -206,23 +205,26 @@ where
     }
 
     async fn handle_payload(&mut self, payload: gateway::Payload) -> Result<()> {
-        match payload.op {
-            0 => self.op0_dispatch(payload).await,
-            1 => self.op1_heartbeat(payload).await,
-            10 => self.op10_hello(payload).await,
-            11 => self.op11_heartbeat_ack(payload).await,
-            _ => Err(Errors::GatewayUnknownOpcode { opcode: payload.op }),
+        use std::convert::TryFrom;
+        match GatewayOpcode::try_from(payload.op)? {
+            GatewayOpcode::Dispatch => self.op0_dispatch(payload).await,
+            GatewayOpcode::Heartbeat => self.op1_heartbeat(payload).await,
+            GatewayOpcode::Reconnect => self.op7_reconnect(payload).await,
+            GatewayOpcode::InvalidSession => self.op9_invalid_session(payload).await,
+            GatewayOpcode::Hello => self.op10_hello(payload).await,
+            GatewayOpcode::HeartbeatAck => self.op11_heartbeat_ack(payload).await,
+            _ => Err(Errors::GatewayInvalidRecieveOpcode { opcode: payload.op }),
         }
     }
 
-    async fn send(&mut self, opcode: GatewayOpcodes, data: serde_json::Value) -> Result<()> {
+    async fn send(&mut self, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
         send(self.client.lock().await.deref_mut(), opcode, data).await
     }
 }
 
 async fn send(
     client: &mut WSClient,
-    opcode: GatewayOpcodes,
+    opcode: GatewayOpcode,
     data: serde_json::Value,
 ) -> Result<()> {
     send_payload(

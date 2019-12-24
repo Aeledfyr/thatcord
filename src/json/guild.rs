@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 /// See the following official documentation for item descriptions.
 /// https://discordapp.com/developers/docs/resources/guild#guild-object
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[non_exhaustive]
 pub struct Guild {
     pub id: String,
     pub unavailable: bool,
