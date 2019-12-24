@@ -149,7 +149,7 @@ where
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
             .context(GatewayClientBuildError)?;
-        builder.add_header("User-Agent".to_owned(), "admi#4273".to_owned());
+        builder.add_header("User-Agent".to_owned(), crate::discord::USER_AGENT.to_owned());
 
         if let Ok(client) = builder.async_connect().await {
             let (tx, rx) = watch::channel::<Option<u64>>(None);

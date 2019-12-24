@@ -9,7 +9,16 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 const TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS: &str = "wss://gateway.discord.gg";
-const API_PATH: &str = "https://discordapp.com/api/v6";
+
+/// The User-Agent of the discord bot that is used when interacting
+/// with the discord apis.
+///
+/// https://discordapp.com/developers/docs/reference#user-agent
+pub(crate) const USER_AGENT: &str = concat!(
+    "DiscordBot (https://github.com/Admicos/thatcord, ",
+    env!("CARGO_PKG_VERSION"),
+    ")"
+);
 
 struct DefaultEventHandler {
     events: HashMap<String, Box<dyn EventHandler>>,
