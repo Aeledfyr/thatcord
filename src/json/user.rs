@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct UserId(super::Id);
+
 /// A Discord User
 /// https://discordapp.com/developers/docs/resources/user#user-object
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[non_exhaustive]
 pub struct User {
-    pub id: String,
+    pub id: UserId,
     pub username: String,
     pub discriminator: String,
 

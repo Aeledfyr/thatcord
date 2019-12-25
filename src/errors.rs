@@ -33,6 +33,9 @@ pub(crate) enum Errors {
     #[snafu(display("Unknown opcode received from Discord's gateway: {}", opcode))]
     GatewayUnknownOpcode { opcode: u8 },
 
+    #[snafu(display("Invalid opcode to recieve from Discord's gateway: {}", opcode))]
+    GatewayInvalidRecieveOpcode { opcode: u8 },
+
     #[snafu(display("Cannot connect to Discord's gateway"))]
     GatewayConnectError,
 
