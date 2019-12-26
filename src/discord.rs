@@ -1,7 +1,7 @@
 use crate::errors::*;
 use crate::events::*;
 use crate::gateway::{EventHandler as GatewayEventHandler, Gateway};
-use crate::json;
+use crate::api;
 use async_trait::async_trait;
 use snafu::ResultExt;
 use std::cell::RefCell;
@@ -83,7 +83,7 @@ impl DefaultEventHandler {
             .expect("Cannot upgrade weak client ref pre guild create");
 
         let c = c.borrow();
-        let new_guild: json::Guild =
+        let new_guild: api::guild::Guild =
             serde_json::from_value(data.clone()).context(JsonConversionError)?;
 
         // There might be a better method, not sure though.
@@ -127,8 +127,8 @@ impl GatewayEventHandler for DefaultEventHandler {
 pub struct Discord {
     events: Option<DefaultEventHandler>,
 
-    user: RefCell<Option<json::User>>,
-    guilds: RefCell<Vec<json::Guild>>,
+    user: RefCell<Option<api::user::User>>,
+    guilds: RefCell<Vec<api::guild::Guild>>,
 }
 
 impl Discord {
@@ -162,7 +162,7 @@ impl Discord {
 
     /// Get information about the current user/bot.
     /// **Warning:** You **can not** use this until you receive a `thatcord::events::ReadyEvent`.
-    pub fn get_current_user(&self) -> json::User {
+    pub fn get_current_user(&self) -> api::user::User {
         self.user
             .borrow()
             .as_ref()

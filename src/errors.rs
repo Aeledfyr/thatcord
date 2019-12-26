@@ -1,4 +1,4 @@
-use crate::json::gateway::Payload;
+use crate::api::gateway::Payload;
 use serde_json::Error as JsonError;
 use snafu::Snafu;
 use tokio::sync::watch::error::SendError as TokioWatchSendError;

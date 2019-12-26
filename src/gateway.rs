@@ -1,5 +1,5 @@
 use crate::errors::{InternalResult as Result, *};
-use crate::json::gateway;
+use crate::api::gateway;
 use async_trait::async_trait;
 use futures_util::SinkExt;
 use serde_json::json;

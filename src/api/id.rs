@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// https://discordapp.com/developers/docs/reference#snowflakes
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(transparent)]
-pub(crate) struct Id(pub(crate) u64);
+pub struct Id(pub(crate) u64);
 
 impl Id {
     /// Gets the timestamp that the snowflake id was created at (unix epoch)
@@ -41,3 +41,36 @@ impl<'de> serde::Deserialize<'de> for Id {
         }
     }
 }
+
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct ApplicationId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct GuildId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct RoleId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct UserId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct ChannelId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MessageId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct EmojiId(pub Id);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct AttachmentId(pub Id);

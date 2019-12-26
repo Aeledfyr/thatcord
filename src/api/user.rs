@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct UserId(super::Id);
+use super::id::*;
 
 /// A Discord User
 /// https://discordapp.com/developers/docs/resources/user#user-object
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct User {
     pub id: UserId,
@@ -21,13 +18,11 @@ pub struct User {
 
     #[serde(default)]
     pub bot: bool,
-
     #[serde(default)]
     pub system: bool,
-
     #[serde(default)]
     pub mfa_enabled: bool,
-
     #[serde(default)]
     pub verified: bool,
 }
+
