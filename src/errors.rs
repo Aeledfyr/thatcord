@@ -14,7 +14,10 @@ macro_rules! convert_error {
 pub enum DiscordError {
     JsonError(serde_json::Error),
     WebSocketError(websocket_lite::Error),
+    HttpError(surf::Exception),
+    IoError(std::io::Error),
     HeartbeatSeqUpdateError(tokio::sync::watch::error::SendError<Option<u64>>),
+    ApiError(crate::api::ApiError),
     GatewayError(GatewayError),
 }
 
@@ -23,6 +26,9 @@ impl std::fmt::Display for DiscordError {
         match self {
             Self::JsonError(ref e) => write!(f, "JSON error: {}", e),
             Self::WebSocketError(ref e) => write!(f, "Web Socket error: {}", e),
+            Self::IoError(ref e) => write!(f, "IO error: {}", e),
+            Self::HttpError(ref e) => write!(f, "HTTP error: {}", e),
+            Self::ApiError(ref e) => write!(f, "Discord API error ({}): {}", e.code, e.message),
             Self::HeartbeatSeqUpdateError(ref e) => {
                 write!(f, "Heartbeat sequence update error: {}", e)
             }
@@ -33,6 +39,8 @@ impl std::fmt::Display for DiscordError {
 
 convert_error!(serde_json::Error, DiscordError, JsonError);
 convert_error!(websocket_lite::Error, DiscordError, WebSocketError);
+convert_error!(crate::api::ApiError, DiscordError, ApiError);
+convert_error!(std::io::Error, DiscordError, IoError);
 convert_error!(
     tokio::sync::watch::error::SendError<Option<u64>>,
     DiscordError,

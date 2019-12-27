@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// https://discordapp.com/developers/docs/reference#snowflakes
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(transparent)]
-pub(crate) struct Id(pub(crate) u64);
+pub struct Id(pub(crate) u64);
 
 impl Id {
     /// Gets the timestamp that the snowflake id was created at (unix epoch)
@@ -41,3 +41,34 @@ impl<'de> serde::Deserialize<'de> for Id {
         }
     }
 }
+
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+macro_rules! impl_id {
+    ($name:ident) => {
+        #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+        #[serde(transparent)]
+        pub struct $name(pub Id);
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+    };
+}
+
+impl_id!(ApplicationId);
+impl_id!(GuildId);
+impl_id!(RoleId);
+impl_id!(UserId);
+impl_id!(ChannelId);
+impl_id!(MessageId);
+impl_id!(EmojiId);
+impl_id!(AttachmentId);
+impl_id!(IntegrationId);
+impl_id!(OverwriteId);

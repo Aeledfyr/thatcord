@@ -1,5 +1,5 @@
+use crate::api::gateway;
 use crate::errors::{GatewayError, Result};
-use crate::json::gateway;
 use async_trait::async_trait;
 use futures_util::SinkExt;
 use serde_json::json;
@@ -49,11 +49,13 @@ async fn heartbeat(
         interval.tick().await;
 
         log::trace!("Sending heartbeat");
+        println!("{}", serde_json::to_value(Some(0)).unwrap());
+        let value: serde_json::Value = serde_json::to_value(seq_channel.recv().await)
+            .expect("heartbeat sequence cannot be transformed into a JSON value");
         if let Err(e) = send(
             client.lock().await.deref_mut(),
             GatewayOpcode::Heartbeat,
-            serde_json::to_value(seq_channel.recv().await)
-                .expect("heartbeat sequence cannot be transformed into a JSON value"),
+            value,
         )
         .await
         {

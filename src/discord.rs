@@ -1,14 +1,13 @@
+use crate::api;
 use crate::errors::*;
 use crate::events::*;
 use crate::gateway::{EventHandler as GatewayEventHandler, Gateway};
-use crate::json;
 use async_trait::async_trait;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-const TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS: &str = "wss://gateway.discord.gg";
-const API_PATH: &str = "https://discordapp.com/api/v6";
+pub(crate) const API_PATH: &str = "https://discordapp.com/api/v6";
 
 /// The User-Agent of the discord bot that is used when interacting
 /// with the discord apis.
@@ -80,7 +79,7 @@ impl DefaultEventHandler {
             .expect("Cannot upgrade weak client ref pre guild create");
 
         let c = c.borrow();
-        let new_guild: json::Guild = serde_json::from_value(data.clone())?;
+        let new_guild: api::guild::Guild = serde_json::from_value(data.clone())?;
 
         // There might be a better method, not sure though.
         (*c.guilds.borrow_mut()).retain(|g| g.id != new_guild.id);
@@ -123,8 +122,8 @@ impl GatewayEventHandler for DefaultEventHandler {
 pub struct Discord {
     events: Option<DefaultEventHandler>,
 
-    user: RefCell<Option<json::User>>,
-    guilds: RefCell<Vec<json::Guild>>,
+    user: RefCell<Option<api::user::User>>,
+    guilds: RefCell<Vec<api::guild::Guild>>,
 }
 
 impl Discord {
@@ -158,7 +157,7 @@ impl Discord {
 
     /// Get information about the current user/bot.
     /// **Warning:** You **can not** use this until you receive a `thatcord::events::ReadyEvent`.
-    pub fn get_current_user(&self) -> json::User {
+    pub fn get_current_user(&self) -> api::user::User {
         self.user
             .borrow()
             .as_ref()
@@ -170,6 +169,7 @@ impl Discord {
     /// **Warning:** This method **will not return** until the connection closes.
     pub async fn connect(this: Rc<RefCell<Self>>, token: &str) -> Result<()> {
         let mut iself = this.borrow_mut();
+        let gateway = api::gateway::get_bot_gateway(token).await?;
 
         // Since this method is the last one that should be called in this struct,
         // we can safely move the event handler off of us, and into the gateway.
@@ -177,7 +177,7 @@ impl Discord {
         // https://stackoverflow.com/questions/31307680/how-to-move-one-field-out-of-a-struct-that-implements-drop-trait
         let take_ownership_of_events = std::mem::replace(&mut iself.events, None);
         let mut gateway = Gateway::new(
-            TMP_GATEWAY_SERIOUSLY_DYNAMICALLY_GET_THIS,
+            &gateway.url,
             token,
             take_ownership_of_events.expect("Events not initialized? It should be..."),
         )
