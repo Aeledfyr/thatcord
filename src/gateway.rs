@@ -1,5 +1,5 @@
-use crate::errors::{InternalResult as Result, *};
 use crate::api::gateway;
+use crate::errors::{InternalResult as Result, *};
 use async_trait::async_trait;
 use futures_util::SinkExt;
 use serde_json::json;
@@ -50,11 +50,13 @@ async fn heartbeat(
         interval.tick().await;
 
         log::trace!("Sending heartbeat");
+        println!("{}", serde_json::to_value(Some(0)).unwrap());
+        let value: serde_json::Value = serde_json::to_value(seq_channel.recv().await)
+            .expect("heartbeat sequence cannot be transformed into a JSON value");
         if let Err(e) = send(
             client.lock().await.deref_mut(),
             GatewayOpcode::Heartbeat,
-            serde_json::to_value(seq_channel.recv().await)
-                .expect("heartbeat sequence cannot be transformed into a JSON value"),
+            value,
         )
         .await
         {
@@ -153,7 +155,10 @@ where
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
             .context(GatewayClientBuildError)?;
-        builder.add_header("User-Agent".to_owned(), crate::discord::USER_AGENT.to_owned());
+        builder.add_header(
+            "User-Agent".to_owned(),
+            crate::discord::USER_AGENT.to_owned(),
+        );
 
         if let Ok(client) = builder.async_connect().await {
             let (tx, rx) = watch::channel::<Option<u64>>(None);
@@ -222,11 +227,7 @@ where
     }
 }
 
-async fn send(
-    client: &mut WSClient,
-    opcode: GatewayOpcode,
-    data: serde_json::Value,
-) -> Result<()> {
+async fn send(client: &mut WSClient, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
     send_payload(
         client,
         gateway::Payload {

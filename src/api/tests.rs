@@ -1,7 +1,7 @@
+use super::channel::*;
 use super::guild::*;
 use super::id::*;
 use super::user::*;
-use super::channel::*;
 
 #[test]
 fn test_role() {

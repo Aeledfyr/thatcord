@@ -42,35 +42,33 @@ impl<'de> serde::Deserialize<'de> for Id {
     }
 }
 
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct ApplicationId(pub Id);
+macro_rules! impl_id {
+    ($name:ident) => {
+        #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+        #[serde(transparent)]
+        pub struct $name(pub Id);
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct GuildId(pub Id);
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+    };
+}
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct RoleId(pub Id);
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct UserId(pub Id);
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct ChannelId(pub Id);
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct MessageId(pub Id);
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct EmojiId(pub Id);
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct AttachmentId(pub Id);
+impl_id!(ApplicationId);
+impl_id!(GuildId);
+impl_id!(RoleId);
+impl_id!(UserId);
+impl_id!(ChannelId);
+impl_id!(MessageId);
+impl_id!(EmojiId);
+impl_id!(AttachmentId);
+impl_id!(IntegrationId);
+impl_id!(OverwriteId);

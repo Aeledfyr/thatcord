@@ -1,7 +1,7 @@
-use thatcord::{impl_event, events, Discord, Result};
+use thatcord::{events, impl_event, Discord, Result};
 
 struct ExampleHandler {
-    welcome_text: String
+    welcome_text: String,
 }
 
 // https://github.com/dtolnay/async-trait/issues/46
@@ -25,9 +25,12 @@ async fn main() -> Result<()> {
 
     {
         let mut client_events = client.borrow_mut();
-        client_events.register_event(events::READY, ExampleHandler {
-            welcome_text: "Welcome! We are ready!".to_owned()
-        });
+        client_events.register_event(
+            events::READY,
+            ExampleHandler {
+                welcome_text: "Welcome! We are ready!".to_owned(),
+            },
+        );
     }
 
     Discord::connect(client, &token).await

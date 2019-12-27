@@ -1,7 +1,7 @@
+use crate::api;
 use crate::errors::*;
 use crate::events::*;
 use crate::gateway::{EventHandler as GatewayEventHandler, Gateway};
-use crate::api;
 use async_trait::async_trait;
 use snafu::ResultExt;
 use std::cell::RefCell;

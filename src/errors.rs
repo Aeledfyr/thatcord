@@ -1,10 +1,10 @@
 use crate::api::gateway::Payload;
 use serde_json::Error as JsonError;
 use snafu::Snafu;
+use surf::Exception as HttpError;
 use tokio::sync::watch::error::SendError as TokioWatchSendError;
 use url::ParseError as UrlParseError;
 use websocket_lite::Error as WebSocketError;
-use surf::Exception as HttpError;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -27,7 +27,16 @@ pub(crate) enum Errors {
 
     #[snafu(display("Error connecting to Discord's API"))]
     ApiHttpError { source: DebugWrapper<HttpError> },
-    
+
+    #[snafu(display("IO error getting response from Discord's API"))]
+    ApiIOError { source: std::io::Error },
+
+    #[snafu(display("Error connecting to Discord's API"))]
+    ApiError {
+        status: u16,
+        data: crate::api::DiscordError,
+    },
+
     #[snafu(display("Cannot send payload to Discord's gateway"))]
     GatewaySendPayloadError {
         source: WebSocketError,
@@ -62,21 +71,44 @@ pub(crate) enum Errors {
 }
 
 pub(crate) struct DebugWrapper<T: std::fmt::Display>(pub T);
-impl<T> std::fmt::Debug for DebugWrapper<T> where T: std::fmt::Display {
+impl<T> std::fmt::Debug for DebugWrapper<T>
+where
+    T: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
-impl<T> std::fmt::Display for DebugWrapper<T> where T: std::fmt::Display {
+impl<T> std::fmt::Display for DebugWrapper<T>
+where
+    T: std::fmt::Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 impl<T> std::error::Error for DebugWrapper<T> where T: std::error::Error {}
-impl<T> std::ops::Deref for DebugWrapper<T> where T: std::fmt::Display {
+impl<T> std::ops::Deref for DebugWrapper<T>
+where
+    T: std::fmt::Display,
+{
     type Target = T;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
-impl<T> std::ops::DerefMut for DebugWrapper<T> where T: std::fmt::Display {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+impl<T> std::ops::DerefMut for DebugWrapper<T>
+where
+    T: std::fmt::Display,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub(crate) fn wrap_surf(e: surf::Exception) -> Error {
+    Errors::ApiHttpError {
+        source: DebugWrapper(e),
+    }
+    .into()
 }

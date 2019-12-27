@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use serde_repr::{Serialize_repr, Deserialize_repr};
 use serde_json::Value;
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 /// A gateway payload
 /// https://discordapp.com/developers/docs/topics/gateway#payloads
@@ -14,8 +14,7 @@ pub(crate) struct Payload {
 
 /// The opcode for a gateway event
 /// https://discordapp.com/developers/docs/topics/opcodes-and-status-codes#gateway-opcodes
-#[derive(Copy, Clone, Debug)]
-#[derive(Serialize_repr, Deserialize_repr)]
+#[derive(Copy, Clone, Debug, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
 #[non_exhaustive]
 pub(crate) enum GatewayOpcode {
@@ -47,7 +46,7 @@ impl std::convert::TryFrom<u8> for GatewayOpcode {
             9 => Ok(GatewayOpcode::InvalidSession),
             10 => Ok(GatewayOpcode::Hello),
             11 => Ok(GatewayOpcode::HeartbeatAck),
-            op => Err(crate::errors::Errors::GatewayUnknownOpcode { opcode: op })
+            op => Err(crate::errors::Errors::GatewayUnknownOpcode { opcode: op }),
         }
     }
 }
