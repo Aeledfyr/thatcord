@@ -1,9 +1,8 @@
-use crate::errors::{InternalResult as Result, *};
+use crate::errors::{GatewayError, Result};
 use crate::json::gateway;
 use async_trait::async_trait;
 use futures_util::SinkExt;
 use serde_json::json;
-use snafu::ResultExt;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
@@ -79,9 +78,8 @@ where
     }
 
     async fn op0_dispatch(&mut self, payload: gateway::Payload) -> Result<()> {
-        self.heartbeat_seq_channel_send
-            .broadcast(payload.s)
-            .context(GatewayHeartbeatSeqUpdateError)?;
+        self.heartbeat_seq_channel_send.broadcast(payload.s)?;
+
         let event = payload.t.expect("OP0 does not have event name??");
         let data = payload.d;
 
@@ -98,7 +96,7 @@ where
         send(
             &mut *self.client.lock().await,
             GatewayOpcode::Heartbeat,
-            serde_json::to_value(ch.recv().await).context(JsonConversionError)?,
+            serde_json::to_value(ch.recv().await)?,
         )
         .await
     }
@@ -133,9 +131,9 @@ where
             )
             .await
         } else {
-            Err(Errors::GatewayInvalidResponseError {
+            Err(GatewayError::InvalidResponseError {
                 what: "Hello does not have heartbeat_interval".to_owned(),
-            })
+            })?
         }
     }
 
@@ -152,8 +150,12 @@ where
 
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
-            .context(GatewayClientBuildError)?;
-        builder.add_header("User-Agent".to_owned(), crate::discord::USER_AGENT.to_owned());
+            .map_err(|e| GatewayError::from(e))?;
+
+        builder.add_header(
+            "User-Agent".to_owned(),
+            crate::discord::USER_AGENT.to_owned(),
+        );
 
         if let Ok(client) = builder.async_connect().await {
             let (tx, rx) = watch::channel::<Option<u64>>(None);
@@ -169,7 +171,7 @@ where
                 heartbeat_seq_channel_recv: rx,
             })
         } else {
-            Err(Errors::GatewayConnectError {})
+            Err(GatewayError::ConnectError)?
         }
     }
 
@@ -188,11 +190,7 @@ where
                         log::trace!("discord raw payload {:?}", payload);
 
                         if let Some(data) = payload.as_text() {
-                            self.handle_payload(
-                                serde_json::from_str(data)
-                                    .context(JsonDeserializationError { json: data })?,
-                            )
-                            .await?;
+                            self.handle_payload(serde_json::from_str(data)?).await?;
                         } else {
                             log::error!("Discord weird payload: {:?}", payload);
                         }
@@ -206,6 +204,7 @@ where
 
     async fn handle_payload(&mut self, payload: gateway::Payload) -> Result<()> {
         use std::convert::TryFrom;
+
         match GatewayOpcode::try_from(payload.op)? {
             GatewayOpcode::Dispatch => self.op0_dispatch(payload).await,
             GatewayOpcode::Heartbeat => self.op1_heartbeat(payload).await,
@@ -213,7 +212,7 @@ where
             GatewayOpcode::InvalidSession => self.op9_invalid_session(payload).await,
             GatewayOpcode::Hello => self.op10_hello(payload).await,
             GatewayOpcode::HeartbeatAck => self.op11_heartbeat_ack(payload).await,
-            _ => Err(Errors::GatewayInvalidRecieveOpcode { opcode: payload.op }),
+            _ => Err(GatewayError::UnknownOpcode { opcode: payload.op })?,
         }
     }
 
@@ -222,11 +221,7 @@ where
     }
 }
 
-async fn send(
-    client: &mut WSClient,
-    opcode: GatewayOpcode,
-    data: serde_json::Value,
-) -> Result<()> {
+async fn send(client: &mut WSClient, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
     send_payload(
         client,
         gateway::Payload {
@@ -241,11 +236,8 @@ async fn send(
 }
 
 async fn send_payload(client: &mut WSClient, payload: gateway::Payload) -> Result<()> {
-    let payload_str = serde_json::to_string(&payload).context(JsonSerializationError)?;
+    let payload_str = serde_json::to_string(&payload)?;
 
     log::trace!("sending gateway payload: {}", payload_str);
-    client
-        .send(Message::text(payload_str))
-        .await
-        .context(GatewaySendPayloadError { payload })
+    Ok(client.send(Message::text(payload_str)).await?)
 }

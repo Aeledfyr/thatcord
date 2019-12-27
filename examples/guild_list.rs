@@ -1,7 +1,7 @@
-use thatcord::{impl_event, events, Discord, Result};
+use thatcord::{events, impl_event, Discord, Result};
 
 struct ExampleReadyHandler {
-    welcome_text: String
+    welcome_text: String,
 }
 
 impl_event!(ExampleReadyHandler, ReadyEvent(this, client: (events::Client<'_>)) {
@@ -28,9 +28,12 @@ async fn main() -> Result<()> {
 
     {
         let mut client_events = client.borrow_mut();
-        client_events.register_event(events::READY, ExampleReadyHandler {
-            welcome_text: "Welcome! Listing guilds!".to_owned()
-        });
+        client_events.register_event(
+            events::READY,
+            ExampleReadyHandler {
+                welcome_text: "Welcome! Listing guilds!".to_owned(),
+            },
+        );
 
         client_events.register_event(events::GUILD_CREATE, ExampleGuildCreateHandler {});
     }

@@ -1,58 +1,66 @@
-use crate::json::gateway::Payload;
-use serde_json::Error as JsonError;
-use snafu::Snafu;
-use tokio::sync::watch::error::SendError as TokioWatchSendError;
-use url::ParseError as UrlParseError;
-use websocket_lite::Error as WebSocketError;
+pub type Result<T, E = DiscordError> = std::result::Result<T, E>;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-pub(crate) type InternalResult<T, E = Errors> = std::result::Result<T, E>;
-
-#[derive(Debug, Snafu)]
-pub struct Error(Errors);
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub(crate)))]
-pub(crate) enum Errors {
-    #[snafu(display("Error serializing to JSON"))]
-    JsonSerializationError { source: JsonError },
-
-    #[snafu(display("Error deserializing from JSON: {}", json))]
-    JsonDeserializationError { source: JsonError, json: String },
-
-    #[snafu(display("Error converting to JSON value"))]
-    JsonConversionError { source: JsonError },
-
-    #[snafu(display("Cannot send payload to Discord's gateway"))]
-    GatewaySendPayloadError {
-        source: WebSocketError,
-        payload: Payload,
-    },
-
-    #[snafu(display("Unknown opcode received from Discord's gateway: {}", opcode))]
-    GatewayUnknownOpcode { opcode: u8 },
-
-    #[snafu(display("Invalid opcode to recieve from Discord's gateway: {}", opcode))]
-    GatewayInvalidRecieveOpcode { opcode: u8 },
-
-    #[snafu(display("Cannot connect to Discord's gateway"))]
-    GatewayConnectError,
-
-    #[snafu(display("Cannot create a client for gateway connection"))]
-    GatewayClientBuildError { source: UrlParseError },
-
-    #[snafu(display("Gateway received invalid response: {}", what))]
-    GatewayInvalidResponseError { what: String },
-
-    #[snafu(display("Gateway received unknown event: {}", event))]
-    GatewayUnknownEvent { event: String },
-
-    #[snafu(display("Gateway couldn't update heartbeat sequenve"))]
-    GatewayHeartbeatSeqUpdateError {
-        source: TokioWatchSendError<Option<u64>>,
-    },
-
-    #[snafu(display("Event handler has returned an error"))]
-    EventError,
+macro_rules! convert_error {
+    ($from:ty, $to:ty, $which:ident) => {
+        impl From<$from> for $to {
+            fn from(e: $from) -> $to {
+                <$to>::$which(e)
+            }
+        }
+    };
 }
+
+#[derive(Debug)]
+pub enum DiscordError {
+    JsonError(serde_json::Error),
+    WebSocketError(websocket_lite::Error),
+    HeartbeatSeqUpdateError(tokio::sync::watch::error::SendError<Option<u64>>),
+    GatewayError(GatewayError),
+}
+
+impl std::fmt::Display for DiscordError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::JsonError(ref e) => write!(f, "JSON error: {}", e),
+            Self::WebSocketError(ref e) => write!(f, "Web Socket error: {}", e),
+            Self::HeartbeatSeqUpdateError(ref e) => {
+                write!(f, "Heartbeat sequence update error: {}", e)
+            }
+            Self::GatewayError(ref e) => write!(f, "Gateway error: {}", e),
+        }
+    }
+}
+
+convert_error!(serde_json::Error, DiscordError, JsonError);
+convert_error!(websocket_lite::Error, DiscordError, WebSocketError);
+convert_error!(
+    tokio::sync::watch::error::SendError<Option<u64>>,
+    DiscordError,
+    HeartbeatSeqUpdateError
+);
+convert_error!(GatewayError, DiscordError, GatewayError);
+
+#[derive(Debug)]
+pub enum GatewayError {
+    ClientBuildError(url::ParseError),
+
+    ConnectError,
+    UnknownOpcode { opcode: u8 },
+    InvalidResponseError { what: String },
+    UnknownEvent { event: String },
+}
+
+impl std::fmt::Display for GatewayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::ClientBuildError(ref e) => write!(f, "Cannot build client: {}", e),
+
+            Self::ConnectError => write!(f, "Cannot connect"),
+            Self::UnknownOpcode { opcode } => write!(f, "Unknown opcode: {}", opcode),
+            Self::InvalidResponseError { what } => write!(f, "Invalid response: {}", what),
+            Self::UnknownEvent { event } => write!(f, "Unknown event: {}", event),
+        }
+    }
+}
+
+convert_error!(url::ParseError, GatewayError, ClientBuildError);

@@ -1,8 +1,8 @@
 pub(crate) mod gateway;
 pub mod guild;
-pub mod user;
 mod id;
+pub mod user;
 
 pub use guild::*;
-pub use user::*;
 pub(crate) use id::Id;
+pub use user::*;
