@@ -43,7 +43,7 @@ pub struct Guild {
     pub vanity_url_code: Option<String>,
     pub preferred_locale: Option<String>,
 
-    pub permissions: Option<u64>,
+    pub permissions: Option<super::permissions::Permissions>,
 
     pub premium_subscription_count: Option<u64>,
 
@@ -70,8 +70,8 @@ pub struct Guild {
     pub members: Option<Vec<GuildMember>>,
     pub voice_states: Option<Vec<VoiceState>>,
 
-    pub emojis: Vec<super::channel::Emoji>,
-    pub roles: Vec<Role>,
+    pub emojis: Option<Vec<super::channel::Emoji>>,
+    pub roles: Option<Vec<Role>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -94,7 +94,7 @@ pub struct Role {
     pub color: u64,
     pub hoist: bool,
     pub position: u64,
-    pub permissions: u64,
+    pub permissions: super::permissions::Permissions,
     pub managed: bool,
     pub mentionable: bool,
 }
@@ -102,12 +102,12 @@ pub struct Role {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct PresenceUpdate {
-    pub user: serde_json::Value,
-    pub roles: Vec<RoleId>,
+    pub user: Option<serde_json::Value>,
+    pub roles: Option<Vec<RoleId>>,
     pub game: Option<Activity>,
-    pub guild_id: GuildId,
-    pub status: OnlineStatus,
-    pub activities: Vec<Activity>,
+    pub guild_id: Option<GuildId>,
+    pub status: Option<OnlineStatus>,
+    pub activities: Option<Vec<Activity>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -481,7 +481,7 @@ pub async fn get_guild_roles(token: &str, guild: GuildId) -> Result<Vec<Role>> {
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct CreateRole {
     pub name: String,
-    pub permissions: u64,
+    pub permissions: super::permissions::Permissions,
     pub color: u64,
     pub hoist: bool,
     pub mentionable: bool,
@@ -506,7 +506,7 @@ pub async fn modify_role_order(
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct ModifyRole {
     pub name: Option<String>,
-    pub permissions: Option<u64>,
+    pub permissions: Option<super::permissions::Permissions>,
     pub color: Option<u64>,
     pub hoist: Option<bool>,
     pub mentionable: Option<bool>,

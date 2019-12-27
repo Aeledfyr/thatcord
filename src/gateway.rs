@@ -49,7 +49,6 @@ async fn heartbeat(
         interval.tick().await;
 
         log::trace!("Sending heartbeat");
-        println!("{}", serde_json::to_value(Some(0)).unwrap());
         let value: serde_json::Value = serde_json::to_value(seq_channel.recv().await)
             .expect("heartbeat sequence cannot be transformed into a JSON value");
         if let Err(e) = send(
@@ -237,9 +236,17 @@ async fn send(client: &mut WSClient, opcode: GatewayOpcode, data: serde_json::Va
     .await
 }
 
-async fn send_payload(client: &mut WSClient, payload: gateway::Payload) -> Result<()> {
+async fn send_payload(client: &mut WSClient, mut payload: gateway::Payload) -> Result<()> {
     let payload_str = serde_json::to_string(&payload)?;
 
-    log::trace!("sending gateway payload: {}", payload_str);
+    // Don't log the discord token
+    if payload.op == GatewayOpcode::Identify as u8 {
+        if let Some(token) = payload.d.get_mut("token") {
+            *token = serde_json::json!("<TOKEN REDACTED>");
+        }
+        log::trace!("sending gateway payload: {}", serde_json::to_string(&payload)?);
+    } else {
+        log::trace!("sending gateway payload: {}", payload_str);
+    }
     Ok(client.send(Message::text(payload_str)).await?)
 }
