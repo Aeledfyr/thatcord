@@ -18,7 +18,6 @@ pub mod user;
 mod tests;
 
 use crate::errors;
-use snafu::ResultExt;
 use std::collections::HashMap;
 
 fn set_headers<C: surf::middleware::HttpClient>(
@@ -45,8 +44,7 @@ async fn api_get<T: serde::de::DeserializeOwned>(
         )),
         token,
     )
-    .await
-    .map_err(errors::wrap_surf)?;
+    .await?;
     handle_errors(response).await
 }
 
@@ -66,10 +64,8 @@ async fn api_post<T: serde::de::DeserializeOwned, D: serde::Serialize>(
         )),
         token,
     )
-    .body_json(data)
-    .context(crate::errors::JsonSerializationError)?
-    .await
-    .map_err(errors::wrap_surf)?;
+    .body_json(data)?
+    .await?;
     handle_errors(response).await
 }
 /// Makes an http PUT request with a token and a url starting after `/api/v6/`
@@ -88,10 +84,8 @@ async fn api_put<T: serde::de::DeserializeOwned, D: serde::Serialize>(
         )),
         token,
     )
-    .body_json(data)
-    .context(crate::errors::JsonSerializationError)?
-    .await
-    .map_err(errors::wrap_surf)?;
+    .body_json(data)?
+    .await?;
     handle_errors(response).await
 }
 /// Makes an http PATCH request with a token and a url starting after `/api/v6/`
@@ -110,10 +104,8 @@ async fn api_patch<T: serde::de::DeserializeOwned, D: serde::Serialize>(
         )),
         token,
     )
-    .body_json(data)
-    .context(crate::errors::JsonSerializationError)?
-    .await
-    .map_err(errors::wrap_surf)?;
+    .body_json(data)?
+    .await?;
     handle_errors(response).await
 }
 /// Makes an http DELETE request with a token and a url starting after `/api/v6/`
@@ -131,8 +123,7 @@ async fn api_delete<T: serde::de::DeserializeOwned>(
         )),
         token,
     )
-    .await
-    .map_err(errors::wrap_surf)?;
+    .await?;
     handle_errors(response).await
 }
 
@@ -164,21 +155,14 @@ async fn handle_errors<T: serde::de::DeserializeOwned>(
     mut response: surf::Response,
 ) -> crate::Result<T> {
     if response.status().is_success() {
-        Ok(response.body_json().await.context(errors::ApiIOError)?)
+        Ok(response.body_json().await?)
     } else {
-        Err(errors::Errors::ApiError {
-            status: response.status().as_u16(),
-            data: response
-                .body_json::<DiscordError>()
-                .await
-                .context(errors::ApiIOError)?,
-        }
-        .into())
+        Err(errors::DiscordError::ApiError(response.body_json::<ApiError>().await?).into())
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DiscordError {
+pub struct ApiError {
     pub code: u64,
     pub message: String,
 }

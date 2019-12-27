@@ -329,34 +329,59 @@ pub async fn send_message(token: &str, channel: ChannelId, message: NewMessage) 
         token,
         &format!("/channels/{}/messages", channel),
         None,
-        &message
+        &message,
     )
     .await
 }
 
 /// the emoji is in the format "name:id" for custom, or unicode characters
-pub async fn create_reaction(token: &str, channel: ChannelId, message: MessageId, emoji: String) -> Result<()> {
+pub async fn create_reaction(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: String,
+) -> Result<()> {
     super::api_post(
         token,
-        &format!("/channels/{}/messages/{}/reactions/{}/@me", channel, message, emoji),
+        &format!(
+            "/channels/{}/messages/{}/reactions/{}/@me",
+            channel, message, emoji
+        ),
         None,
         &(),
     )
     .await
 }
 
-pub async fn delete_own_reaction(token: &str, channel: ChannelId, message: MessageId, emoji: String) -> Result<()> {
+pub async fn delete_own_reaction(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: String,
+) -> Result<()> {
     super::api_delete(
         token,
-        &format!("/channels/{}/messages/{}/reactions/{}/@me", channel, message, emoji),
+        &format!(
+            "/channels/{}/messages/{}/reactions/{}/@me",
+            channel, message, emoji
+        ),
         None,
     )
     .await
 }
-pub async fn delete_user_reaction(token: &str, channel: ChannelId, message: MessageId, user: UserId, emoji: String) -> Result<()> {
+pub async fn delete_user_reaction(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+    user: UserId,
+    emoji: String,
+) -> Result<()> {
     super::api_delete(
         token,
-        &format!("/channels/{}/messages/{}/reactions/{}/{}", channel, message, emoji, user),
+        &format!(
+            "/channels/{}/messages/{}/reactions/{}/{}",
+            channel, message, emoji, user
+        ),
         None,
     )
     .await
@@ -372,7 +397,13 @@ pub enum ReactionQueryLocation {
     After(UserId),
 }
 
-pub async fn get_reaction_users(token: &str, channel: ChannelId, message: MessageId, emoji: String, query: ReactionQuery) -> Result<Vec<User>> {
+pub async fn get_reaction_users(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+    emoji: String,
+    query: ReactionQuery,
+) -> Result<Vec<User>> {
     let mut map = std::collections::HashMap::new();
     if let Some(limit) = query.limit {
         map.insert("limit", limit.to_string());
@@ -388,12 +419,19 @@ pub async fn get_reaction_users(token: &str, channel: ChannelId, message: Messag
     }
     super::api_get(
         token,
-        &format!("/channels/{}/messages/{}/reactions/{}", channel, message, emoji),
+        &format!(
+            "/channels/{}/messages/{}/reactions/{}",
+            channel, message, emoji
+        ),
         None,
     )
     .await
 }
-pub async fn delete_all_reactions(token: &str, channel: ChannelId, message: MessageId) -> Result<()> {
+pub async fn delete_all_reactions(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+) -> Result<()> {
     super::api_delete(
         token,
         &format!("/channels/{}/messages/{}/reactions", channel, message),
@@ -407,12 +445,17 @@ pub struct EditMessage {
     pub embed: Option<Embed>,
     pub flags: Option<u64>,
 }
-pub async fn edit_message(token: &str, channel: ChannelId, message: MessageId, edit_message: EditMessage) -> Result<Message> {
+pub async fn edit_message(
+    token: &str,
+    channel: ChannelId,
+    message: MessageId,
+    edit_message: EditMessage,
+) -> Result<Message> {
     super::api_patch(
         token,
         &format!("/channels/{}/messages/{}", channel, message),
         None,
-        &edit_message
+        &edit_message,
     )
     .await
 }
@@ -426,7 +469,11 @@ pub async fn delete_message(token: &str, channel: ChannelId, message: MessageId)
     .await
 }
 
-pub async fn bulk_delete_message(token: &str, channel: ChannelId, messages: Vec<MessageId>) -> Result<()> {
+pub async fn bulk_delete_message(
+    token: &str,
+    channel: ChannelId,
+    messages: Vec<MessageId>,
+) -> Result<()> {
     super::api_post(
         token,
         &format!("/channels/{}/messages/bulk-delete", channel),
@@ -443,16 +490,25 @@ pub struct EditChannelPermission {
     #[serde(rename = "type")]
     pub kind: String, // "member" or "role"
 }
-pub async fn edit_channel_permission(token: &str, channel: ChannelId, overwrite: OverwriteId, data: EditChannelPermission) -> Result<()> {
+pub async fn edit_channel_permission(
+    token: &str,
+    channel: ChannelId,
+    overwrite: OverwriteId,
+    data: EditChannelPermission,
+) -> Result<()> {
     super::api_patch(
         token,
         &format!("/channels/{}/permissions/{}", channel, overwrite),
         None,
-        &data
+        &data,
     )
     .await
 }
-pub async fn delete_channel_permission(token: &str, channel: ChannelId, overwrite: OverwriteId) -> Result<()> {
+pub async fn delete_channel_permission(
+    token: &str,
+    channel: ChannelId,
+    overwrite: OverwriteId,
+) -> Result<()> {
     super::api_delete(
         token,
         &format!("/channels/{}/permissions/{}", channel, overwrite),
@@ -461,7 +517,10 @@ pub async fn delete_channel_permission(token: &str, channel: ChannelId, overwrit
     .await
 }
 
-pub async fn get_channel_invites(token: &str, channel: ChannelId) -> Result<Vec<super::guild::Invite>> {
+pub async fn get_channel_invites(
+    token: &str,
+    channel: ChannelId,
+) -> Result<Vec<super::guild::Invite>> {
     super::api_get(token, &format!("/channels/{}/invites", channel), None).await
 }
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -471,8 +530,18 @@ pub struct CreateChannelInvite {
     pub temporary: Option<bool>,
     pub unique: Option<bool>,
 }
-pub async fn create_channel_invite(token: &str, channel: ChannelId, data: CreateChannelInvite) -> Result<super::guild::Invite> {
-    super::api_post(token, &format!("/channels/{}/invites", channel), None, &data).await
+pub async fn create_channel_invite(
+    token: &str,
+    channel: ChannelId,
+    data: CreateChannelInvite,
+) -> Result<super::guild::Invite> {
+    super::api_post(
+        token,
+        &format!("/channels/{}/invites", channel),
+        None,
+        &data,
+    )
+    .await
 }
 
 pub async fn trigger_typing_indicator(token: &str, channel: ChannelId) -> Result<()> {
@@ -483,10 +552,21 @@ pub async fn get_pinned_messages(token: &str, channel: ChannelId) -> Result<Vec<
     super::api_get(token, &format!("/channels/{}/pins", channel), None).await
 }
 pub async fn pin_message(token: &str, channel: ChannelId, message: MessageId) -> Result<()> {
-    super::api_put(token, &format!("/channels/{}/pins/{}", channel, message), None, &()).await
+    super::api_put(
+        token,
+        &format!("/channels/{}/pins/{}", channel, message),
+        None,
+        &(),
+    )
+    .await
 }
 pub async fn unpin_message(token: &str, channel: ChannelId, message: MessageId) -> Result<()> {
-    super::api_delete(token, &format!("/channels/{}/pins/{}", channel, message), None).await
+    super::api_delete(
+        token,
+        &format!("/channels/{}/pins/{}", channel, message),
+        None,
+    )
+    .await
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -494,11 +574,27 @@ pub struct GroupDMAdd {
     pub access_token: String,
     pub nick: String,
 }
-pub async fn group_dm_add(token: &str, channel: ChannelId, user: UserId, data: GroupDMAdd) -> Result<()> {
-    super::api_put(token, &format!("/channels/{}/recipients/{}", channel, user), None, &data).await
+pub async fn group_dm_add(
+    token: &str,
+    channel: ChannelId,
+    user: UserId,
+    data: GroupDMAdd,
+) -> Result<()> {
+    super::api_put(
+        token,
+        &format!("/channels/{}/recipients/{}", channel, user),
+        None,
+        &data,
+    )
+    .await
 }
 pub async fn group_dm_remove(token: &str, channel: ChannelId, user: UserId) -> Result<()> {
-    super::api_delete(token, &format!("/channels/{}/recipients/{}", channel, user), None).await
+    super::api_delete(
+        token,
+        &format!("/channels/{}/recipients/{}", channel, user),
+        None,
+    )
+    .await
 }
 
 pub async fn list_guild_emojis(token: &str, guild: GuildId) -> Result<Vec<Emoji>> {

@@ -3,7 +3,6 @@ use crate::errors::*;
 use crate::events::*;
 use crate::gateway::{EventHandler as GatewayEventHandler, Gateway};
 use async_trait::async_trait;
-use snafu::ResultExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -52,7 +51,7 @@ impl DefaultEventHandler {
 
     /// A handler function that runs before any of the registered event handlers
     /// run when a "READY" event is recieved.
-    fn pre_ready(&mut self, data: &serde_json::Value) -> InternalResult<()> {
+    fn pre_ready(&mut self, data: &serde_json::Value) -> Result<()> {
         let c = self
             .client
             .as_mut()
@@ -62,18 +61,16 @@ impl DefaultEventHandler {
 
         let c = c.borrow();
 
-        (*c.user.borrow_mut()) =
-            Some(serde_json::from_value(data["user"].clone()).context(JsonConversionError)?);
+        (*c.user.borrow_mut()) = Some(serde_json::from_value(data["user"].clone())?);
 
-        (*c.guilds.borrow_mut()) =
-            serde_json::from_value(data["guilds"].clone()).context(JsonConversionError)?;
+        (*c.guilds.borrow_mut()) = serde_json::from_value(data["guilds"].clone())?;
 
         Ok(())
     }
 
     /// A handler function that runs before any of the registered event handlers
     /// run when a "GUILD_CREATE" event is recieved.
-    fn pre_guild_create(&mut self, data: &serde_json::Value) -> InternalResult<()> {
+    fn pre_guild_create(&mut self, data: &serde_json::Value) -> Result<()> {
         let c = self
             .client
             .as_mut()
@@ -82,8 +79,7 @@ impl DefaultEventHandler {
             .expect("Cannot upgrade weak client ref pre guild create");
 
         let c = c.borrow();
-        let new_guild: api::guild::Guild =
-            serde_json::from_value(data.clone()).context(JsonConversionError)?;
+        let new_guild: api::guild::Guild = serde_json::from_value(data.clone())?;
 
         // There might be a better method, not sure though.
         (*c.guilds.borrow_mut()).retain(|g| g.id != new_guild.id);
@@ -94,7 +90,7 @@ impl DefaultEventHandler {
 
 #[async_trait(?Send)]
 impl GatewayEventHandler for DefaultEventHandler {
-    async fn handle(&mut self, event: String, data: serde_json::Value) -> InternalResult<()> {
+    async fn handle(&mut self, event: String, data: serde_json::Value) -> Result<()> {
         // Special case events
         match event.as_str() {
             "READY" => self.pre_ready(&data)?,
@@ -173,12 +169,7 @@ impl Discord {
     /// **Warning:** This method **will not return** until the connection closes.
     pub async fn connect(this: Rc<RefCell<Self>>, token: &str) -> Result<()> {
         let mut iself = this.borrow_mut();
-        let gateway =
-            api::gateway::get_bot_gateway(token)
-                .await
-                .map_err(|e| Errors::ApiHttpError {
-                    source: DebugWrapper(e),
-                })?;
+        let gateway = api::gateway::get_bot_gateway(token).await?;
 
         // Since this method is the last one that should be called in this struct,
         // we can safely move the event handler off of us, and into the gateway.
