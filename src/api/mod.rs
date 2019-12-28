@@ -13,6 +13,7 @@ pub mod gateway;
 pub mod guild;
 pub mod id;
 pub mod user;
+pub mod permissions;
 
 #[cfg(test)]
 mod tests;

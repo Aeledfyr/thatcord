@@ -38,8 +38,8 @@ pub struct PermissionOverwrite {
     /// "role" or "user"
     #[serde(rename = "type")]
     pub kind: String,
-    pub allow: u64,
-    pub deny: u64,
+    pub allow: super::permissions::Permissions,
+    pub deny: super::permissions::Permissions,
 }
 
 #[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq)]
@@ -485,8 +485,8 @@ pub async fn bulk_delete_message(
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct EditChannelPermission {
-    pub allow: u64,
-    pub deny: u64,
+    pub allow: super::permissions::Permissions,
+    pub deny: super::permissions::Permissions,
     #[serde(rename = "type")]
     pub kind: String, // "member" or "role"
 }
