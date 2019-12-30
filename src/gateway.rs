@@ -259,7 +259,7 @@ where
         } else {
             Err(GatewayError::InvalidResponseError {
                 what: "Hello does not have heartbeat_interval".to_owned(),
-            })?
+            }.into())
         }
     }
 
@@ -277,7 +277,7 @@ where
 
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
-            .map_err(|e| GatewayError::from(e))?;
+            .map_err(GatewayError::from)?;
 
         builder.add_header(
             "User-Agent".to_owned(),
@@ -313,7 +313,7 @@ where
                 heartbeat_handler: handler,
             })
         } else {
-            Err(GatewayError::ConnectError)?
+            Err(GatewayError::ConnectError.into())
         }
     }
 
@@ -336,7 +336,7 @@ where
             GatewayOpcode::InvalidSession => self.op9_invalid_session(payload).await,
             GatewayOpcode::Hello => self.op10_hello(payload).await,
             GatewayOpcode::HeartbeatAck => self.op11_heartbeat_ack(payload).await,
-            _ => Err(GatewayError::UnknownOpcode { opcode: payload.op })?,
+            _ => Err(GatewayError::UnknownOpcode { opcode: payload.op }.into()),
         }
     }
 }

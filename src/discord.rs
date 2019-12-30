@@ -50,7 +50,7 @@ impl DefaultEventHandler {
     }
 
     /// A handler function that runs before any of the registered event handlers
-    /// run when a "READY" event is recieved.
+    /// run when a "READY" event is received.
     fn pre_ready(&mut self, data: &serde_json::Value) -> Result<()> {
         let c = self
             .client
@@ -69,7 +69,7 @@ impl DefaultEventHandler {
     }
 
     /// A handler function that runs before any of the registered event handlers
-    /// run when a "GUILD_CREATE" event is recieved.
+    /// run when a "GUILD_CREATE" event is received.
     fn pre_guild_create(&mut self, data: &serde_json::Value) -> Result<()> {
         let c = self
             .client
