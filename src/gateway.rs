@@ -1,12 +1,10 @@
 use crate::api::gateway;
 use crate::errors::{GatewayError, Result};
 use async_trait::async_trait;
+use futures_util::stream::StreamExt;
 use futures_util::SinkExt;
 use serde_json::json;
-use std::ops::DerefMut;
-use std::sync::Arc;
-use tokio::stream::StreamExt;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::watch;
 use tokio::time;
 use websocket_lite::{AsyncClient, AsyncNetworkStream, ClientBuilder, Message};
 
@@ -29,35 +27,167 @@ where
     F: EventHandler,
 {
     token: String,
-    client: Arc<Mutex<WSClient>>,
+    client: Client,
     session_id: String,
     state: DiscordState,
     event_handler: F,
+    socket: Option<Connection>,
 
-    heartbeat_seq_channel_send: watch::Sender<Option<u64>>,
-    heartbeat_seq_channel_recv: watch::Receiver<Option<u64>>,
+    heartbeat_sender: HeartbeatSender,
+    heartbeat_handler: HeartbeatHandler,
+}
+
+pub(crate) struct Client {
+    pub send: tokio::sync::mpsc::UnboundedSender<gateway::Payload>,
+    pub receive: tokio::sync::mpsc::UnboundedReceiver<gateway::Payload>,
+}
+
+impl Client {
+    fn send(&mut self, op: gateway::GatewayOpcode, value: serde_json::Value) -> Result<()> {
+        self.send.send(gateway::Payload {
+            op: op as u8,
+            d: value,
+            t: None,
+            s: None,
+        })?;
+        Ok(())
+    }
+}
+
+pub(crate) struct Connection {
+    socket: futures_util::stream::Fuse<WSClient>,
+    send: tokio::sync::mpsc::UnboundedSender<gateway::Payload>, // Linked to Client.receive
+    receive: futures_util::stream::Fuse<tokio::sync::mpsc::UnboundedReceiver<gateway::Payload>>, // Linked to Client.send
+    disconnect: futures_util::stream::Fuse<tokio::sync::mpsc::UnboundedReceiver<bool>>, // Linked to Client.send
+}
+
+impl Connection {
+    /// Creates a new Connection structure, which will be used once
+    /// to start the socket handler, and a Client structure, which
+    /// holds the queues for communication.
+    pub(crate) fn new(
+        socket: WSClient,
+        disconnect: tokio::sync::mpsc::UnboundedReceiver<bool>,
+    ) -> (Self, Client) {
+        let (client_send, receive) = tokio::sync::mpsc::unbounded_channel();
+        let (send, client_receive) = tokio::sync::mpsc::unbounded_channel();
+
+        (
+            Self {
+                send,
+                receive: receive.fuse(),
+                socket: socket.fuse(),
+                disconnect: disconnect.fuse(),
+            },
+            Client {
+                send: client_send,
+                receive: client_receive,
+            },
+        )
+    }
+
+    /// Starts the socket handling loop, and immediately returns
+    /// The handler is run through a spawned future (tokio::spawn)
+    pub(crate) fn run(mut self) {
+        tokio::spawn(async move {
+            loop {
+                futures_util::select! {
+                    disconnect = self.disconnect.select_next_some() => {
+                        if disconnect {
+                            self.socket.send(Message::close(Some((4000, String::new())))).await?;
+                            self.socket.close().await?;
+                            log::error!("Disconnecting from gateway");
+                            break;
+                        }
+                    }
+                    payload = self.socket.select_next_some() => {
+                        match payload {
+                            Ok(payload) => {
+                                log::trace!("discord raw payload {:?}", payload);
+
+                                if let Some(data) = payload.as_text() {
+                                    let payload: gateway::Payload = serde_json::from_str::<gateway::Payload>(data)?;
+                                    self.send.send(payload)?;
+                                } else {
+                                    log::error!("Discord weird payload: {:?}", payload);
+                                }
+                            }
+                            Err(e) => log::error!("Discord error: {}", e),
+                        }
+                    }
+                    payload = self.receive.select_next_some() => {
+                        send(payload, &mut self.socket).await?;
+                    }
+                }
+            }
+            Ok::<(), crate::errors::DiscordError>(())
+        });
+    }
+}
+
+async fn send(
+    mut payload: gateway::Payload,
+    socket: &mut futures_util::stream::Fuse<WSClient>,
+) -> Result<()> {
+    let payload_str = serde_json::to_string(&payload)?;
+
+    // Don't log the discord token
+    if payload.op == GatewayOpcode::Identify as u8 {
+        if let Some(token) = payload.d.get_mut("token") {
+            *token = serde_json::json!("<TOKEN REDACTED>");
+        }
+        log::trace!(
+            "sending gateway payload: {}",
+            serde_json::to_string(&payload)?
+        );
+    } else {
+        log::trace!("sending gateway payload: {}", payload_str);
+    }
+    socket.send(Message::text(payload_str)).await?;
+    Ok(())
+}
+
+struct HeartbeatSender {
+    last_seq: watch::Sender<Option<u64>>,
+    last_ack: watch::Sender<std::time::Instant>,
+}
+
+#[derive(Clone)]
+struct HeartbeatHandler {
+    last_seq: watch::Receiver<Option<u64>>,
+    last_send: std::time::Instant,
+    last_ack: watch::Receiver<std::time::Instant>,
+    disconnect: tokio::sync::mpsc::UnboundedSender<bool>,
 }
 
 async fn heartbeat(
-    client: Arc<Mutex<WSClient>>,
+    client: tokio::sync::mpsc::UnboundedSender<gateway::Payload>,
     heartbeat_interval: u64,
-    seq_channel: &mut watch::Receiver<Option<u64>>,
+    mut handler: HeartbeatHandler,
 ) {
     let mut interval = time::interval(time::Duration::from_millis(heartbeat_interval));
 
     loop {
         interval.tick().await;
 
+        if *handler.last_ack.borrow() < handler.last_send {
+            // Break connection
+            log::error!("No response for heartbeat, reconnecting");
+            handler.disconnect.send(true).unwrap();
+            break;
+        }
+
+        handler.last_send = std::time::Instant::now();
+
         log::trace!("Sending heartbeat");
-        let value: serde_json::Value = serde_json::to_value(seq_channel.recv().await)
+        let value: serde_json::Value = serde_json::to_value(*handler.last_seq.borrow())
             .expect("heartbeat sequence cannot be transformed into a JSON value");
-        if let Err(e) = send(
-            client.lock().await.deref_mut(),
-            GatewayOpcode::Heartbeat,
-            value,
-        )
-        .await
-        {
+        if let Err(e) = client.send(gateway::Payload {
+            op: GatewayOpcode::Heartbeat as u8,
+            d: value,
+            s: None,
+            t: None,
+        }) {
             log::error!("Cannot send heartbeat to Discord: {}", e);
         }
     }
@@ -79,7 +209,7 @@ where
     }
 
     async fn op0_dispatch(&mut self, payload: gateway::Payload) -> Result<()> {
-        self.heartbeat_seq_channel_send.broadcast(payload.s)?;
+        self.heartbeat_sender.last_seq.broadcast(payload.s)?;
 
         let event = payload.t.expect("OP0 does not have event name??");
         let data = payload.d;
@@ -93,13 +223,9 @@ where
     }
 
     async fn op1_heartbeat(&mut self, _payload: gateway::Payload) -> Result<()> {
-        let ch = &mut self.heartbeat_seq_channel_recv;
-        send(
-            &mut *self.client.lock().await,
-            GatewayOpcode::Heartbeat,
-            serde_json::to_value(ch.recv().await)?,
-        )
-        .await
+        let last_seq = &*self.heartbeat_handler.last_seq.borrow();
+        self.client
+            .send(GatewayOpcode::Heartbeat, serde_json::to_value(last_seq)?)
     }
 
     async fn op7_reconnect(&mut self, _payload: gateway::Payload) -> Result<()> {
@@ -111,15 +237,15 @@ where
 
     async fn op10_hello(&mut self, payload: gateway::Payload) -> Result<()> {
         if let Some(heartbeat_interval) = payload.d["heartbeat_interval"].as_u64() {
-            let client = self.client.clone();
-            let mut seq_channel = self.heartbeat_seq_channel_recv.clone();
+            let sender = self.client.send.clone();
+            let handler = self.heartbeat_handler.clone();
 
             log::trace!("heartbeat interval: {} ms", heartbeat_interval);
             tokio::spawn(async move {
-                heartbeat(client, heartbeat_interval, &mut seq_channel).await;
+                heartbeat(sender, heartbeat_interval, handler).await;
             });
 
-            self.send(
+            self.client.send(
                 GatewayOpcode::Identify,
                 json!({
                     "token": self.token,
@@ -130,7 +256,6 @@ where
                     }
                 }),
             )
-            .await
         } else {
             Err(GatewayError::InvalidResponseError {
                 what: "Hello does not have heartbeat_interval".to_owned(),
@@ -143,9 +268,10 @@ where
         // sending heartbeats, it should immediately terminate the connection
         // with a non-1000 close code, reconnect, and attempt to resume.
         //  ~ https://discordapp.com/developers/docs/topics/gateway#connecting-to-the-gateway
-        //
-        // That looks hard, especially with the background heartbeat thingy, so
-        // I'm not going to implement this yet.
+        self.heartbeat_sender
+            .last_ack
+            .broadcast(std::time::Instant::now())
+            .map_err(crate::errors::DiscordError::HeartbeatTimeError)?;
         Ok(())
     }
 
@@ -159,17 +285,32 @@ where
         );
 
         if let Ok(client) = builder.async_connect().await {
-            let (tx, rx) = watch::channel::<Option<u64>>(None);
+            let start = std::time::Instant::now();
+            let (last_ack_tx, last_ack_rx) = watch::channel::<std::time::Instant>(start);
+            let (last_seq_tx, last_seq_rx) = watch::channel::<Option<u64>>(None);
+            let (disconnect_tx, disconnect_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+            let handler = HeartbeatHandler {
+                last_ack: last_ack_rx,
+                last_seq: last_seq_rx,
+                last_send: start,
+                disconnect: disconnect_tx,
+            };
+            let sender = HeartbeatSender {
+                last_ack: last_ack_tx,
+                last_seq: last_seq_tx,
+            };
+            let (connection, client) = Connection::new(client, disconnect_rx);
             Ok(Gateway {
                 token: token.to_owned(),
-                client: Arc::new(Mutex::new(client)),
+                client,
+                socket: Some(connection),
                 event_handler,
 
                 session_id: "".to_owned(),
                 state: DiscordState::Initial,
 
-                heartbeat_seq_channel_send: tx,
-                heartbeat_seq_channel_recv: rx,
+                heartbeat_sender: sender,
+                heartbeat_handler: handler,
             })
         } else {
             Err(GatewayError::ConnectError)?
@@ -177,30 +318,12 @@ where
     }
 
     pub(crate) async fn handle(&mut self) -> Result<()> {
-        loop {
-            let mut c_lock = self.client.lock().await;
-            let payload = c_lock.deref_mut().next().await;
-
-            // Drop the Mutex lock so we can use `client` elsewhere.
-            // If this wasn't needed, this `loop { match { ... } }` could've been a `while let`
-            std::mem::drop(c_lock);
-
-            match payload {
-                Some(payload) => match payload {
-                    Ok(payload) => {
-                        log::trace!("discord raw payload {:?}", payload);
-
-                        if let Some(data) = payload.as_text() {
-                            self.handle_payload(serde_json::from_str(data)?).await?;
-                        } else {
-                            log::error!("Discord weird payload: {:?}", payload);
-                        }
-                    }
-                    Err(e) => log::error!("Discord error: {}", e),
-                },
-                None => break Ok(()),
-            }
+        let socket = self.socket.take().expect("Handle can only be run once");
+        socket.run();
+        while let Some(payload) = self.client.receive.recv().await {
+            self.handle_payload(payload).await?;
         }
+        Ok(())
     }
 
     async fn handle_payload(&mut self, payload: gateway::Payload) -> Result<()> {
@@ -216,37 +339,4 @@ where
             _ => Err(GatewayError::UnknownOpcode { opcode: payload.op })?,
         }
     }
-
-    async fn send(&mut self, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
-        send(self.client.lock().await.deref_mut(), opcode, data).await
-    }
-}
-
-async fn send(client: &mut WSClient, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
-    send_payload(
-        client,
-        gateway::Payload {
-            op: opcode as u8,
-            d: data,
-
-            s: None,
-            t: None,
-        },
-    )
-    .await
-}
-
-async fn send_payload(client: &mut WSClient, mut payload: gateway::Payload) -> Result<()> {
-    let payload_str = serde_json::to_string(&payload)?;
-
-    // Don't log the discord token
-    if payload.op == GatewayOpcode::Identify as u8 {
-        if let Some(token) = payload.d.get_mut("token") {
-            *token = serde_json::json!("<TOKEN REDACTED>");
-        }
-        log::trace!("sending gateway payload: {}", serde_json::to_string(&payload)?);
-    } else {
-        log::trace!("sending gateway payload: {}", payload_str);
-    }
-    Ok(client.send(Message::text(payload_str)).await?)
 }

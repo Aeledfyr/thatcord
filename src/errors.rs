@@ -17,6 +17,8 @@ pub enum DiscordError {
     HttpError(surf::Exception),
     IoError(std::io::Error),
     HeartbeatSeqUpdateError(tokio::sync::watch::error::SendError<Option<u64>>),
+    SocketThread(tokio::sync::mpsc::error::SendError<crate::api::gateway::Payload>),
+    HeartbeatTimeError(tokio::sync::watch::error::SendError<std::time::Instant>),
     ApiError(crate::api::ApiError),
     GatewayError(GatewayError),
 }
@@ -32,6 +34,8 @@ impl std::fmt::Display for DiscordError {
             Self::HeartbeatSeqUpdateError(ref e) => {
                 write!(f, "Heartbeat sequence update error: {}", e)
             }
+            Self::HeartbeatTimeError(ref e) => write!(f, "Heartbeat time update error: {}", e),
+            Self::SocketThread(ref e) => write!(f, "Socket thread communcation failiure: {}", e),
             Self::GatewayError(ref e) => write!(f, "Gateway error: {}", e),
         }
     }
@@ -45,6 +49,11 @@ convert_error!(
     tokio::sync::watch::error::SendError<Option<u64>>,
     DiscordError,
     HeartbeatSeqUpdateError
+);
+convert_error!(
+    tokio::sync::mpsc::error::SendError<crate::api::gateway::Payload>,
+    DiscordError,
+    SocketThread
 );
 convert_error!(GatewayError, DiscordError, GatewayError);
 
