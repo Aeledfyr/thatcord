@@ -1,16 +1,14 @@
 use crate::api::gateway;
 use crate::errors::{GatewayError, Result};
 use async_trait::async_trait;
-use futures_util::SinkExt;
 use serde_json::json;
-use std::ops::DerefMut;
-use std::sync::Arc;
-use tokio::stream::StreamExt;
-use tokio::sync::{watch, Mutex};
-use tokio::time;
-use websocket_lite::{AsyncClient, AsyncNetworkStream, ClientBuilder, Message};
+use websocket_lite::ClientBuilder;
 
-type WSClient = AsyncClient<Box<dyn AsyncNetworkStream + Send + Sync + Unpin>>;
+mod heartbeat;
+mod socket;
+
+use heartbeat::{heartbeat, HeartbeatHandler, HeartbeatSender};
+use socket::{Client, Connection};
 
 #[async_trait(?Send)]
 pub(crate) trait EventHandler {
@@ -29,38 +27,14 @@ where
     F: EventHandler,
 {
     token: String,
-    client: Arc<Mutex<WSClient>>,
+    client: Client,
     session_id: String,
     state: DiscordState,
     event_handler: F,
+    socket: Option<Connection>,
 
-    heartbeat_seq_channel_send: watch::Sender<Option<u64>>,
-    heartbeat_seq_channel_recv: watch::Receiver<Option<u64>>,
-}
-
-async fn heartbeat(
-    client: Arc<Mutex<WSClient>>,
-    heartbeat_interval: u64,
-    seq_channel: &mut watch::Receiver<Option<u64>>,
-) {
-    let mut interval = time::interval(time::Duration::from_millis(heartbeat_interval));
-
-    loop {
-        interval.tick().await;
-
-        log::trace!("Sending heartbeat");
-        let value: serde_json::Value = serde_json::to_value(seq_channel.recv().await)
-            .expect("heartbeat sequence cannot be transformed into a JSON value");
-        if let Err(e) = send(
-            client.lock().await.deref_mut(),
-            GatewayOpcode::Heartbeat,
-            value,
-        )
-        .await
-        {
-            log::error!("Cannot send heartbeat to Discord: {}", e);
-        }
-    }
+    heartbeat_sender: HeartbeatSender,
+    heartbeat_handler: HeartbeatHandler,
 }
 
 impl<F> Gateway<F>
@@ -79,7 +53,7 @@ where
     }
 
     async fn op0_dispatch(&mut self, payload: gateway::Payload) -> Result<()> {
-        self.heartbeat_seq_channel_send.broadcast(payload.s)?;
+        self.heartbeat_sender.last_seq.broadcast(payload.s)?;
 
         let event = payload.t.expect("OP0 does not have event name??");
         let data = payload.d;
@@ -93,13 +67,9 @@ where
     }
 
     async fn op1_heartbeat(&mut self, _payload: gateway::Payload) -> Result<()> {
-        let ch = &mut self.heartbeat_seq_channel_recv;
-        send(
-            &mut *self.client.lock().await,
-            GatewayOpcode::Heartbeat,
-            serde_json::to_value(ch.recv().await)?,
-        )
-        .await
+        let last_seq = &*self.heartbeat_handler.last_seq.borrow();
+        self.client
+            .send(GatewayOpcode::Heartbeat, serde_json::to_value(last_seq)?)
     }
 
     async fn op7_reconnect(&mut self, _payload: gateway::Payload) -> Result<()> {
@@ -111,15 +81,15 @@ where
 
     async fn op10_hello(&mut self, payload: gateway::Payload) -> Result<()> {
         if let Some(heartbeat_interval) = payload.d["heartbeat_interval"].as_u64() {
-            let client = self.client.clone();
-            let mut seq_channel = self.heartbeat_seq_channel_recv.clone();
+            let sender = self.client.send.clone();
+            let handler = self.heartbeat_handler.clone();
 
             log::trace!("heartbeat interval: {} ms", heartbeat_interval);
             tokio::spawn(async move {
-                heartbeat(client, heartbeat_interval, &mut seq_channel).await;
+                heartbeat(sender, heartbeat_interval, handler).await;
             });
 
-            self.send(
+            self.client.send(
                 GatewayOpcode::Identify,
                 json!({
                     "token": self.token,
@@ -130,11 +100,11 @@ where
                     }
                 }),
             )
-            .await
         } else {
             Err(GatewayError::InvalidResponseError {
                 what: "Hello does not have heartbeat_interval".to_owned(),
-            })?
+            }
+            .into())
         }
     }
 
@@ -143,15 +113,16 @@ where
         // sending heartbeats, it should immediately terminate the connection
         // with a non-1000 close code, reconnect, and attempt to resume.
         //  ~ https://discordapp.com/developers/docs/topics/gateway#connecting-to-the-gateway
-        //
-        // That looks hard, especially with the background heartbeat thingy, so
-        // I'm not going to implement this yet.
+        self.heartbeat_sender
+            .last_ack
+            .broadcast(std::time::Instant::now())
+            .map_err(crate::errors::DiscordError::HeartbeatTimeError)?;
         Ok(())
     }
 
     pub async fn new(gateway: &str, token: &str, event_handler: F) -> Result<Self> {
         let mut builder = ClientBuilder::new(&format!("{}?v=6&encoding=json", gateway))
-            .map_err(|e| GatewayError::from(e))?;
+            .map_err(GatewayError::from)?;
 
         builder.add_header(
             "User-Agent".to_owned(),
@@ -159,48 +130,34 @@ where
         );
 
         if let Ok(client) = builder.async_connect().await {
-            let (tx, rx) = watch::channel::<Option<u64>>(None);
+            let (disconnect_tx, disconnect_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+            let (connection, client) = Connection::new(client, disconnect_rx);
+            let (handler, sender) = HeartbeatHandler::new(disconnect_tx);
+
             Ok(Gateway {
                 token: token.to_owned(),
-                client: Arc::new(Mutex::new(client)),
+                client,
+                socket: Some(connection),
                 event_handler,
 
                 session_id: "".to_owned(),
                 state: DiscordState::Initial,
 
-                heartbeat_seq_channel_send: tx,
-                heartbeat_seq_channel_recv: rx,
+                heartbeat_sender: sender,
+                heartbeat_handler: handler,
             })
         } else {
-            Err(GatewayError::ConnectError)?
+            Err(GatewayError::ConnectError.into())
         }
     }
 
     pub(crate) async fn handle(&mut self) -> Result<()> {
-        loop {
-            let mut c_lock = self.client.lock().await;
-            let payload = c_lock.deref_mut().next().await;
-
-            // Drop the Mutex lock so we can use `client` elsewhere.
-            // If this wasn't needed, this `loop { match { ... } }` could've been a `while let`
-            std::mem::drop(c_lock);
-
-            match payload {
-                Some(payload) => match payload {
-                    Ok(payload) => {
-                        log::trace!("discord raw payload {:?}", payload);
-
-                        if let Some(data) = payload.as_text() {
-                            self.handle_payload(serde_json::from_str(data)?).await?;
-                        } else {
-                            log::error!("Discord weird payload: {:?}", payload);
-                        }
-                    }
-                    Err(e) => log::error!("Discord error: {}", e),
-                },
-                None => break Ok(()),
-            }
+        let socket = self.socket.take().expect("Handle can only be run once");
+        socket.run();
+        while let Some(payload) = self.client.receive().await {
+            self.handle_payload(payload).await?;
         }
+        Ok(())
     }
 
     async fn handle_payload(&mut self, payload: gateway::Payload) -> Result<()> {
@@ -213,40 +170,7 @@ where
             GatewayOpcode::InvalidSession => self.op9_invalid_session(payload).await,
             GatewayOpcode::Hello => self.op10_hello(payload).await,
             GatewayOpcode::HeartbeatAck => self.op11_heartbeat_ack(payload).await,
-            _ => Err(GatewayError::UnknownOpcode { opcode: payload.op })?,
+            _ => Err(GatewayError::UnknownOpcode { opcode: payload.op }.into()),
         }
     }
-
-    async fn send(&mut self, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
-        send(self.client.lock().await.deref_mut(), opcode, data).await
-    }
-}
-
-async fn send(client: &mut WSClient, opcode: GatewayOpcode, data: serde_json::Value) -> Result<()> {
-    send_payload(
-        client,
-        gateway::Payload {
-            op: opcode as u8,
-            d: data,
-
-            s: None,
-            t: None,
-        },
-    )
-    .await
-}
-
-async fn send_payload(client: &mut WSClient, mut payload: gateway::Payload) -> Result<()> {
-    let payload_str = serde_json::to_string(&payload)?;
-
-    // Don't log the discord token
-    if payload.op == GatewayOpcode::Identify as u8 {
-        if let Some(token) = payload.d.get_mut("token") {
-            *token = serde_json::json!("<TOKEN REDACTED>");
-        }
-        log::trace!("sending gateway payload: {}", serde_json::to_string(&payload)?);
-    } else {
-        log::trace!("sending gateway payload: {}", payload_str);
-    }
-    Ok(client.send(Message::text(payload_str)).await?)
 }

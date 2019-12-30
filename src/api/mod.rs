@@ -12,8 +12,8 @@ pub mod channel;
 pub mod gateway;
 pub mod guild;
 pub mod id;
-pub mod user;
 pub mod permissions;
+pub mod user;
 
 #[cfg(test)]
 mod tests;
@@ -158,7 +158,7 @@ async fn handle_errors<T: serde::de::DeserializeOwned>(
     if response.status().is_success() {
         Ok(response.body_json().await?)
     } else {
-        Err(errors::DiscordError::ApiError(response.body_json::<ApiError>().await?).into())
+        Err(errors::DiscordError::ApiError(response.body_json::<ApiError>().await?))
     }
 }
 
